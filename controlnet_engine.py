@@ -105,9 +105,9 @@ class Engine:
         # Check model type
         if not isinstance(self.model, nn.Module):
             raise TypeError("model must be an instance of nn.Module")
-        self.device = torch.device("cuda:5" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if torch.cuda.is_available():
-            torch.cuda.set_device(5)
+            torch.cuda.set_device(0)
             self.model.cuda()
             self.sensor_model.cuda()
             self.base_model.cuda()
@@ -389,9 +389,9 @@ class Engine:
                 self.online_test()
                 self.ema_nets.train()
                 self.ema.copy_to(self.ema_nets.parameters())
-            print("here1")
+
             val_loss = self.get_val_loss()
-            print("here2")
+
             self.writer.add_scalar(
                         "val_loss", val_loss.cpu().item(), epoch
                     )
@@ -531,8 +531,12 @@ class Engine:
         elif self.args.train.dataset == "PushT":
             test_dataset = PushT_val(self.args.test.data_path)
 
+        test_data_sampler = torch.utils.data.RandomSampler(test_dataset, num_samples=64, replacement=True)
+
         test_dataloader = torch.utils.data.DataLoader(
-            test_dataset, batch_size=1, shuffle=True, num_workers=8,
+            test_dataset, batch_size=1, 
+            # shuffle=True, 
+            num_workers=8, sampler=test_data_sampler,
             collate_fn=tomato_pad_collate_xy_lang if self.args.train.dataset == "Tomato" else pad_collate_xy_lang
         )
 
@@ -564,13 +568,13 @@ class Engine:
             # add noise to the clean images according to the noise magnitude at each diffusion iteration
             # (this is the forward diffusion process)
             noisy_actions = self.noise_scheduler.add_noise(action, noise, timesteps)
-
+            # print("images.size = ", images.size())
             # forward
             img_emb = self.sensor_model(images)
             predicted_noise = self.model(
                 noisy_actions, img_emb, text_features, prior_action, timesteps
             )
-            
+            # print("val_loss = ", self.criterion(noise, predicted_noise))
             val_loss.append(self.criterion(noise, predicted_noise)) 
             
         return sum(val_loss)/len(val_loss)

@@ -146,12 +146,12 @@ def pad_collate_xy_lang(batch):
     return img, prior_action, action, lang
 
 
-""" if __name__ == "__main__":
+if __name__ == "__main__":
     data_dirs = "/home/yuyao/diffusion_policy/data/pusht/pusht_cchi_v7_replay.zarr"
     
     dataset = PushT(data_dirs)
-    for item in dataset:
-        img, prior_action, action, sentence = item
+    # for item in dataset:
+    #     img, prior_action, action, sentence = item
 #         input()
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -163,7 +163,7 @@ def pad_collate_xy_lang(batch):
 #     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #     # clip_model, preprocess = clip.load("ViT-B/32", device=device)
 
-    for item in dataset:
+    for item in dataloader:
         (images, prior_action, action, sentence) = item
         print(
             images.shape,
@@ -174,11 +174,12 @@ def pad_collate_xy_lang(batch):
             sentence.shape,
 #         #     target_pos.shape,
         )
+        print(sentence)
 #         print("=======", action.shape)
 #         # with torch.no_grad():
 #         #     text_features = clip_model.encode_text(sentence)
-        input() """
+        input() 
 
 # data = PushT(data_dirs='/home/yuyao/diffusion_policy/data/pusht/pusht_cchi_v7_replay.zarr')
-# print(data[0].shape)
+# print(data[0][3])
 # print(data.get_action_sequence(25640))

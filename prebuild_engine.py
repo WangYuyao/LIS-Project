@@ -12,6 +12,7 @@ from dataset.tomato_pick_and_place import *
 from dataset.pick_duck import *
 from dataset.drum_hit import *
 from dataset.push_t import *
+from dataset.push_t_val import *
 from optimizer import build_optimizer
 from optimizer import build_lr_scheduler
 from torch.utils.tensorboard import SummaryWriter
@@ -308,6 +309,20 @@ class Engine:
                 self.sensor_model.train()
                 self.ema.copy_to(self.ema_nets.parameters())
 
+            val_loss = self.get_val_loss()
+
+            self.writer.add_scalar(
+                        "val_loss", val_loss.cpu().item(), epoch
+                    )
+            
+            string = "[epoch][s/s_per_e/gs]: [{}], val_loss: {:.12f}"
+            self.logger.info(
+                string.format(
+                    epoch,
+                    val_loss,
+                        )
+                    )
+
             # Update epoch
             epoch += 1
 
@@ -435,3 +450,64 @@ class Engine:
 
         self.model.eval()
         self.sensor_model.eval()
+
+    def get_val_loss(self):
+        val_loss = []
+        if self.args.train.dataset == "OpenLid":
+            test_dataset = OpenLid(self.args.test.data_path)
+        elif self.args.train.dataset == "Tomato":
+            test_dataset = Tomato(self.args.test.data_path)
+        elif self.args.train.dataset == "Duck":
+            test_dataset = Duck(self.args.test.data_path)
+        elif self.args.train.dataset == "Drum":
+            test_dataset = Drum(self.args.test.data_path)
+        elif self.args.train.dataset == "PushT":
+            test_dataset = PushT_val(self.args.test.data_path)
+
+        test_data_sampler = torch.utils.data.RandomSampler(test_dataset, num_samples=200, replacement=True)
+
+        test_dataloader = torch.utils.data.DataLoader(
+            test_dataset, batch_size=1, 
+            # shuffle=True, 
+            num_workers=8, sampler=test_data_sampler,
+            collate_fn=tomato_pad_collate_xy_lang if self.args.train.dataset == "Tomato" else pad_collate_xy_lang
+        )
+
+        for test_data in test_dataloader:
+            # print(test_data["action"].size())
+            test_data = [item.to(self.device) for item in test_data]
+            if (
+                self.args.train.dataset == "Tomato"
+                or self.args.train.dataset == "UR5_real"
+            ):
+                (images, prior_action, action, sentence, target) = test_data
+            else:
+                (images, prior_action, action, sentence) = test_data
+        
+            with torch.no_grad():
+                text_features = self.clip_model.encode_text(sentence)
+                text_features = text_features.clone().detach()
+                text_features = text_features.to(torch.float32)
+
+            # sample noise to add to actions
+            noise = torch.randn(action.shape, device=self.device)
+            # sample a diffusion iteration for each data point
+            timesteps = torch.randint(
+                0,
+                self.noise_scheduler.config.num_train_timesteps,
+                (action.shape[0],),
+                device=self.device,
+            ).long()
+            # add noise to the clean images according to the noise magnitude at each diffusion iteration
+            # (this is the forward diffusion process)
+            noisy_actions = self.noise_scheduler.add_noise(action, noise, timesteps)
+            # print("images.size = ", images.size())
+            # forward
+            img_emb = self.sensor_model(images)
+            predicted_noise = self.model(
+                noisy_actions, img_emb, text_features, timesteps
+            )
+            # print("val_loss = ", self.criterion(noise, predicted_noise))
+            val_loss.append(self.criterion(noise, predicted_noise)) 
+            
+        return sum(val_loss)/len(val_loss)
